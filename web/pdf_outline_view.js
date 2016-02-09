@@ -1,5 +1,3 @@
-/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2012 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals removeNullCharacters */
+/* globals PDFJS */
 
 'use strict';
 
@@ -64,6 +62,10 @@ var PDFOutlineView = (function PDFOutlineViewClosure() {
      * @private
      */
     _bindLink: function PDFOutlineView_bindLink(element, item) {
+      if (item.url) {
+        PDFJS.addLinkAttributes(element, { url: item.url });
+        return;
+      }
       var linkService = this.linkService;
       element.href = linkService.getDestinationHash(item.dest);
       element.onclick = function goToDestination(e) {
@@ -139,7 +141,7 @@ var PDFOutlineView = (function PDFOutlineViewClosure() {
           div.className = 'outlineItem';
           var element = document.createElement('a');
           this._bindLink(element, item);
-          element.textContent = removeNullCharacters(item.title);
+          element.textContent = PDFJS.removeNullCharacters(item.title);
           div.appendChild(element);
 
           if (item.items.length > 0) {

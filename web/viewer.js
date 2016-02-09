@@ -1,5 +1,3 @@
-/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2012 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals PDFJS, PDFBug, FirefoxCom, Stats, Cache, ProgressBar,
+/* globals PDFJS, PDFBug, FirefoxCom, Stats, ProgressBar,
            DownloadManager, getFileName, getPDFFileNameFromURL,
            PDFHistory, Preferences, SidebarView, ViewHistory, Stats,
            PDFThumbnailViewer, URL, noContextMenuHandler, SecondaryToolbar,
@@ -31,23 +29,25 @@ var DEFAULT_URL = 'compressed.tracemonkey-pldi-09.pdf';
 var DEFAULT_SCALE_DELTA = 1.1;
 var MIN_SCALE = 0.25;
 var MAX_SCALE = 10.0;
-var VIEW_HISTORY_MEMORY = 20;
 var SCALE_SELECT_CONTAINER_PADDING = 8;
 var SCALE_SELECT_PADDING = 22;
 var PAGE_NUMBER_LOADING_INDICATOR = 'visiblePageIsLoading';
 var DISABLE_AUTO_FETCH_LOADING_BAR_TIMEOUT = 5000;
 
-PDFJS.imageResourcesPath = './images/';
+function configure(PDFJS) {
+  PDFJS.imageResourcesPath = './images/';
 //#if (FIREFOX || MOZCENTRAL || GENERIC || CHROME)
 //PDFJS.workerSrc = '../build/pdf.worker.js';
 //#endif
 //#if !PRODUCTION
-PDFJS.cMapUrl = '../external/bcmaps/';
-PDFJS.cMapPacked = true;
+  PDFJS.cMapUrl = '../external/bcmaps/';
+  PDFJS.cMapPacked = true;
+  PDFJS.workerSrc = '../src/worker_loader.js';
 //#else
 //PDFJS.cMapUrl = '../web/cmaps/';
 //PDFJS.cMapPacked = true;
 //#endif
+}
 
 var mozL10n = document.mozL10n || document.webL10n;
 
@@ -602,6 +602,9 @@ var PDFViewerApplication = {
       self.progress(progressData.loaded / progressData.total);
     };
 
+    // Listen for unsupported features to trigger the fallback UI.
+    loadingTask.onUnsupportedFeature = this.fallback.bind(this);
+
     var result = loadingTask.promise.then(
       function getDocumentCallback(pdfDocument) {
         self.load(pdfDocument, scale);
@@ -866,6 +869,12 @@ var PDFViewerApplication = {
         }
       }
 
+      var initialParams = {
+        destination: self.initialDestination,
+        bookmark: self.initialBookmark,
+        hash: null,
+      };
+
       store.initializedPromise.then(function resolved() {
         var storedHash = null;
         if (self.preferenceShowPreviousViewOnLoad &&
@@ -883,6 +892,8 @@ var PDFViewerApplication = {
         }
         self.setInitialView(storedHash, scale);
 
+        initialParams.hash = storedHash;
+
         // Make all navigation keys work on document load,
         // unless the viewer is embedded in a web page.
         if (!self.isViewerEmbedded) {
@@ -891,6 +902,23 @@ var PDFViewerApplication = {
       }, function rejected(reason) {
         console.error(reason);
         self.setInitialView(null, scale);
+      });
+
+      // For documents with different page sizes,
+      // ensure that the correct location becomes visible on load.
+      pagesPromise.then(function resolved() {
+        if (!initialParams.destination && !initialParams.bookmark &&
+            !initialParams.hash) {
+          return;
+        }
+        if (self.hasEqualPageSizes) {
+          return;
+        }
+        self.initialDestination = initialParams.destination;
+        self.initialBookmark = initialParams.bookmark;
+
+        self.pdfViewer.currentScaleValue = self.pdfViewer.currentScaleValue;
+        self.setInitialView(initialParams.hash, scale);
       });
     });
 
@@ -1304,8 +1332,49 @@ window.PDFView = PDFViewerApplication; // obsolete name, using it as an alias
 //})();
 //#endif
 
+//#if GENERIC
+var HOSTED_VIEWER_ORIGINS = ['null',
+  'http://mozilla.github.io', 'https://mozilla.github.io'];
+function validateFileURL(file) {
+  try {
+    var viewerOrigin = new URL(window.location.href).origin || 'null';
+    if (HOSTED_VIEWER_ORIGINS.indexOf(viewerOrigin) >= 0) {
+      // Hosted or local viewer, allow for any file locations
+      return;
+    }
+    var fileOrigin = new URL(file, window.location.href).origin;
+    // Removing of the following line will not guarantee that the viewer will
+    // start accepting URLs from foreign origin -- CORS headers on the remote
+    // server must be properly configured.
+    if (fileOrigin !== viewerOrigin) {
+      throw new Error('file origin does not match viewer\'s');
+    }
+  } catch (e) {
+    var message = e && e.message;
+    var loadingErrorMessage = mozL10n.get('loading_error', null,
+      'An error occurred while loading the PDF.');
+
+    var moreInfo = {
+      message: message
+    };
+    PDFViewerApplication.error(loadingErrorMessage, moreInfo);
+    throw e;
+  }
+}
+//#endif
+
 function webViewerLoad(evt) {
-  PDFViewerApplication.initialize().then(webViewerInitialized);
+//#if !PRODUCTION
+  require.config({paths: {'pdfjs': '../src'}});
+  require(['pdfjs/main_loader'],
+    function (loader) {
+      configure(PDFJS);
+      PDFViewerApplication.initialize().then(webViewerInitialized);
+    });
+//#else
+//  configure(PDFJS);
+//  PDFViewerApplication.initialize().then(webViewerInitialized);
+//#endif
 }
 
 function webViewerInitialized() {
@@ -1313,6 +1382,7 @@ function webViewerInitialized() {
   var queryString = document.location.search.substring(1);
   var params = parseQueryString(queryString);
   var file = 'file' in params ? params.file : DEFAULT_URL;
+  validateFileURL(file);
 //#endif
 //#if (FIREFOX || MOZCENTRAL)
 //var file = window.location.href.split('#')[0];
@@ -1442,10 +1512,6 @@ function webViewerInitialized() {
   if (PDFViewerApplication.supportsIntegratedFind) {
     document.getElementById('viewFind').classList.add('hidden');
   }
-
-  // Listen for unsupported features to trigger the fallback UI.
-  PDFJS.UnsupportedManager.listen(
-    PDFViewerApplication.fallback.bind(PDFViewerApplication));
 
   // Suppress context menus for some controls
   document.getElementById('scaleSelect').oncontextmenu = noContextMenuHandler;
@@ -1645,7 +1711,7 @@ document.addEventListener('textlayerrendered', function (e) {
   if (pageView.textLayer && pageView.textLayer.textDivs &&
       pageView.textLayer.textDivs.length > 0 &&
       !PDFViewerApplication.supportsDocumentColors) {
-    console.error(mozL10n.get('document_colors_disabled', null,
+    console.error(mozL10n.get('document_colors_not_allowed', null,
       'PDF documents are not allowed to use their own colors: ' +
       '\'Allow pages to choose their own colors\' ' +
       'is deactivated in the browser.'));

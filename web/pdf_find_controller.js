@@ -1,4 +1,3 @@
-/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright 2012 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +34,7 @@ var PDFFindController = (function PDFFindControllerClosure() {
   function PDFFindController(options) {
     this.startedTextExtraction = false;
     this.extractTextPromises = [];
-    this.pendingFindMatches = {};
+    this.pendingFindMatches = Object.create(null);
     this.active = false; // If active, find results will be highlighted.
     this.pageContents = []; // Stores the text for each page.
     this.pageMatches = [];
@@ -67,7 +66,6 @@ var PDFFindController = (function PDFFindControllerClosure() {
       '\u00BC': '1/4', // Vulgar fraction one quarter
       '\u00BD': '1/2', // Vulgar fraction one half
       '\u00BE': '3/4', // Vulgar fraction three quarters
-      '\u00A0': ' ' // No-break space
     };
     this.findBar = options.findBar || null;
 

@@ -1,5 +1,3 @@
-/* -*- Mode: Java; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /* Copyright 2012 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,10 +12,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals assert, MissingDataException, isInt, NetworkManager, Promise,
-           isEmptyObj, createPromiseCapability */
+/* globals NetworkManager */
 
 'use strict';
+
+(function (root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    define('pdfjs/core/chunked_stream', ['exports', 'pdfjs/shared/util'],
+      factory);
+  } else if (typeof exports !== 'undefined') {
+    factory(exports, require('../shared/util.js'));
+  } else {
+    factory((root.pdfjsCoreChunkedStream = {}), root.pdfjsSharedUtil);
+  }
+}(this, function (exports, sharedUtil) {
+
+var MissingDataException = sharedUtil.MissingDataException;
+var assert = sharedUtil.assert;
+var createPromiseCapability = sharedUtil.createPromiseCapability;
+var isInt = sharedUtil.isInt;
+var isEmptyObj = sharedUtil.isEmptyObj;
 
 var ChunkedStream = (function ChunkedStreamClosure() {
   function ChunkedStream(length, chunkSize, manager) {
@@ -299,9 +313,9 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
 
     this.currRequestId = 0;
 
-    this.chunksNeededByRequest = {};
-    this.requestsByChunk = {};
-    this.promisesByRequest = {};
+    this.chunksNeededByRequest = Object.create(null);
+    this.requestsByChunk = Object.create(null);
+    this.promisesByRequest = Object.create(null);
     this.progressiveDataLength = 0;
 
     this._loadedStreamCapability = createPromiseCapability();
@@ -327,9 +341,9 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
     _requestChunks: function ChunkedStreamManager_requestChunks(chunks) {
       var requestId = this.currRequestId++;
 
-      var chunksNeeded;
       var i, ii;
-      this.chunksNeededByRequest[requestId] = chunksNeeded = {};
+      var chunksNeeded = Object.create(null);
+      this.chunksNeededByRequest[requestId] = chunksNeeded;
       for (i = 0, ii = chunks.length; i < ii; i++) {
         if (!this.stream.hasChunk(chunks[i])) {
           chunksNeeded[chunks[i]] = true;
@@ -547,3 +561,7 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
 
   return ChunkedStreamManager;
 })();
+
+exports.ChunkedStream = ChunkedStream;
+exports.ChunkedStreamManager = ChunkedStreamManager;
+}));
